@@ -2,29 +2,31 @@ name: Build Python APK
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch: # 支持手动点击运行
 
 jobs:
-  build:
+  build_apk:
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取源码
+      - name: 检出仓库代码
         uses: actions/checkout@v4
 
-      - name: 预装系统依赖
+      - name: 安装系统编译依赖
         run: |
-          sudo apt update
-          sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config gcc g++ make cmake libssl-dev python3-pip python3-venv libaidl2-java
+          sudo apt update -y
+          sudo apt upgrade -y
+          sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config gcc g++ make cmake libssl-dev python3-pip python3-venv libaidl2-java libffi-dev
 
-      - name: 安装buildozer
-        run: pip3 install buildozer
-
-      - name: 静默同意Android许可并编译APK
+      - name: 安装Buildozer
         run: |
-          yes | buildozer android debug
-          
-      - name: 上传APK安装包
+          python3 -m pip install --upgrade pip
+          pip3 install buildozer
+
+      - name: 静默同意协议、编译安卓调试APK
+        run: yes | buildozer android debug
+
+      - name: 打包成品上传
         uses: actions/upload-artifact@v4
         with:
-          name: ModbusParser-APK
+          name: ModbusParser-APK安装包
           path: bin/*.apk
