@@ -27,8 +27,9 @@ jobs:
             wget imagemagick
           pip install --upgrade pip
 
-      - name: Install Buildozer
-        run: pip install buildozer
+      - name: Install Buildozer and Cython
+        run: |
+          pip install buildozer cython==0.29.33
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -41,6 +42,8 @@ jobs:
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
+
+          # 清除旧配置
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           sed -i '/^android.skip_update =/d' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -48,6 +51,9 @@ jobs:
           sed -i '/^android.api =/d' buildozer.spec
           sed -i '/^android.minapi =/d' buildozer.spec
           sed -i '/^log_level =/d' buildozer.spec
+          sed -i '/^p4a.hostpython =/d' buildozer.spec
+
+          # 写入配置，指定 hostpython 为系统 Python 3.10
           cat >> buildozer.spec << 'EOF'
           android.accept_sdk_license = True
           android.skip_update = False
@@ -56,6 +62,7 @@ jobs:
           android.api = 30
           android.minapi = 21
           log_level = 2
+          p4a.hostpython = /opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           EOF
 
       - name: Convert icon (if icon.ico exists)
@@ -67,7 +74,7 @@ jobs:
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
           fi
 
-      - name: First build attempt (downloads SDK)
+      - name: First build attempt (downloads SDK, may fail on licenses)
         run: buildozer android debug || true
 
       - name: Accept SDK licenses and install build-tools
@@ -91,46 +98,6 @@ jobs:
           else
             echo "❌ aidl missing!" && exit 1
           fi
-
-      - name: Replace NDK with r23c and clean build cache
-        run: |
-          NDK_DIR="$HOME/.buildozer/android/platform"
-          
-          # 删除 r28c
-          rm -rf "$NDK_DIR/android-ndk-r28c"
-          
-          # 下载 r23c 并复制到 r28c 目录
-          if [ ! -d "$NDK_DIR/android-ndk-r23c" ]; then
-            cd /tmp
-            wget -q https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
-            unzip -q android-ndk-r23c-linux.zip
-            mv android-ndk-r23c "$NDK_DIR/"
-            rm android-ndk-r23c-linux.zip
-            cd -
-          fi
-          cp -r "$NDK_DIR/android-ndk-r23c" "$NDK_DIR/android-ndk-r28c"
-          
-          # 伪装版本
-          PROPS="$NDK_DIR/android-ndk-r28c/source.properties"
-          if [ -f "$PROPS" ]; then
-            sed -i 's/^Pkg.Revision = .*/Pkg.Revision = 28.0.12433566/' "$PROPS"
-            sed -i 's/^Pkg.Desc = .*/Pkg.Desc = Android NDK r28c/' "$PROPS"
-          fi
-          
-          # 关键：删除之前构建的缓存，让 p4a 重新编译 hostpython
-          BUILD_CACHE="$HOME/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a"
-          if [ -d "$BUILD_CACHE" ]; then
-            echo ">> Removing previous build cache to avoid Python 3.14 hostpython..."
-            rm -rf "$BUILD_CACHE"
-          fi
-          
-          # 同时删除 dist 目录，强制重建
-          DIST_DIR="$HOME/.buildozer/android/platform/dist"
-          if [ -d "$DIST_DIR" ]; then
-            rm -rf "$DIST_DIR"
-          fi
-          
-          echo "✅ NDK replaced and build cache cleaned"
 
       - name: Build APK (final)
         run: buildozer android debug
