@@ -34,9 +34,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-final-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-${{ runner.os }}-cgi-fix-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-final-
+            buildozer-${{ runner.os }}-cgi-fix-
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -70,21 +70,6 @@ jobs:
           log_level = 2
           EOF
 
-      - name: Download and configure NDK r25c
-        run: |
-          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r25c"
-          if [ ! -f "$NDK_DIR/ndk-build" ]; then
-            echo ">> Downloading NDK r25c..."
-            wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
-            unzip -q android-ndk-r25c-linux.zip
-            mkdir -p "$(dirname "$NDK_DIR")"
-            mv android-ndk-r25c "$NDK_DIR"
-            rm android-ndk-r25c-linux.zip
-          else
-            echo ">> NDK r25c already exists."
-          fi
-          echo "android.ndk_path = $NDK_DIR" >> buildozer.spec
-
       - name: Convert icon (if icon.ico exists)
         run: |
           if [ -f icon.ico ]; then
@@ -94,7 +79,7 @@ jobs:
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
           fi
 
-      - name: First build attempt (will fail but downloads SDK)
+      - name: First build attempt (download SDK and NDK)
         run: buildozer android debug || true
 
       - name: Fix SDK licenses and build-tools
@@ -102,13 +87,10 @@ jobs:
           SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
           echo ">> Fixing Android SDK at $SDK_DIR"
 
-          # 查找 sdkmanager
           if [ -f "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
           elif [ -f "$SDK_DIR/tools/bin/sdkmanager" ]; then
             SDKMANAGER="$SDK_DIR/tools/bin/sdkmanager"
-          elif [ -f "$SDK_DIR/tools/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK_DIR/tools/cmdline-tools/latest/bin/sdkmanager"
           else
             echo ">> sdkmanager not found, downloading cmdline-tools..."
             mkdir -p "$SDK_DIR/cmdline-tools/latest"
@@ -122,23 +104,32 @@ jobs:
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           export PATH="$JAVA_HOME/bin:$PATH"
 
-          # 接受许可
-          echo ">> Accepting licenses..."
           yes | $SDKMANAGER --licenses --sdk_root="$SDK_DIR" 2>/dev/null || true
-
-          # 安装必要的构建工具
-          echo ">> Installing build-tools 30.0.3..."
           $SDKMANAGER "build-tools;30.0.3" --sdk_root="$SDK_DIR"
           $SDKMANAGER "platforms;android-30" --sdk_root="$SDK_DIR"
           $SDKMANAGER "platform-tools" --sdk_root="$SDK_DIR"
 
-          # 验证 aidl
           if [ -f "$SDK_DIR/build-tools/30.0.3/aidl" ]; then
-            echo "✅ aidl installed successfully at $SDK_DIR/build-tools/30.0.3/aidl"
+            echo "✅ aidl installed successfully"
           else
             echo "❌ aidl still missing!"
             find "$SDK_DIR" -name "aidl" 2>/dev/null
             exit 1
+          fi
+
+      - name: Inject cgi compatibility module for Python 3.14
+        run: |
+          # 找到 Kivy 构建时使用的 Python 3.14 的 site-packages 路径
+          PYTHON314_DIR=$(find /home/runner/.buildozer -name "python3.14" -type d | grep "hostpython3" | head -1)
+          if [ -n "$PYTHON314_DIR" ]; then
+            SITE_PACKAGES="$PYTHON314_DIR/lib/python3.14/site-packages"
+            echo ">> Found Python 3.14 at: $PYTHON314_DIR"
+            echo ">> Injecting cgi.py into $SITE_PACKAGES..."
+            sudo mkdir -p "$SITE_PACKAGES"
+            echo "# Compatibility stub" | sudo tee "$SITE_PACKAGES/cgi.py" > /dev/null
+            echo "✅ cgi.py injected successfully"
+          else
+            echo "⚠️ Python 3.14 directory not found, skipping cgi fix."
           fi
 
       - name: Build APK (final)
