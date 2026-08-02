@@ -27,8 +27,8 @@ jobs:
             wget imagemagick
           pip install --upgrade pip
 
-      - name: Install Buildozer & Cython
-        run: pip install buildozer cython==0.29.33
+      - name: Install Buildozer
+        run: pip install buildozer
 
       - name: Setup Android SDK
         run: |
@@ -61,7 +61,8 @@ jobs:
           sed -i 's/^title = .*/title = Modbus 解析/' buildozer.spec
           sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
-          sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
+          # 升级 Kivy 到 2.3.0，兼容 Python 3.14 + Cython 3.x
+          sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -77,18 +78,16 @@ jobs:
           sed -i '/^android.sdk_path =/d' buildozer.spec
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           echo "android.accept_sdk_license = True" >> buildozer.spec
+          # 强制使用 Python 3.10 作为主机 Python，避免误用系统 Python 3.14
+          echo "p4a.hostpython = $(which python3)" >> buildozer.spec
 
       - name: Convert icon (if icon.ico exists)
         run: |
           if [ -f icon.ico ]; then
             echo ">> Converting icon.ico to icon.png..."
             convert icon.ico icon.png
-            # 确保文件存在
             ls -l icon.png
-            # 将图标路径写入 spec（会追加到文件末尾）
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
-          else
-            echo ">> No icon.ico found, skipping icon setup."
           fi
 
       - name: Create symlink to SDK for Buildozer default location
