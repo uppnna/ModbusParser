@@ -23,46 +23,58 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip \
             autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
-            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev libltdl-dev
+            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev libltdl-dev \
+            wget
           pip install --upgrade pip
 
       - name: Install Buildozer
         run: pip install buildozer
+
+      - name: Install Android SDK and accept licenses
+        run: |
+          # 下载 command-line tools
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
+          unzip cmdline-tools.zip -d $HOME/android-sdk
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          mv $HOME/android-sdk/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+          # 设置环境变量
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/build-tools/30.0.3" >> $GITHUB_PATH
+          # 接受所有许可证
+          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
+          # 安装所需组件
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3"
 
       - name: Initialize Buildozer
         run: buildozer init
 
       - name: Configure Buildozer spec
         run: |
-          # 基础应用信息
           sed -i 's/^title = .*/title = Modbus 解析/' buildozer.spec
           sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
-          
-          # 权限（空）
           sed -i '/^android.permissions =/d' buildozer.spec
           echo "android.permissions = " >> buildozer.spec
-          
-          # 架构与API
           sed -i '/^android.arch =/d' buildozer.spec
           echo "android.arch = arm64-v8a" >> buildozer.spec
           sed -i '/^android.api =/d' buildozer.spec
           echo "android.api = 30" >> buildozer.spec
           sed -i '/^android.minapi =/d' buildozer.spec
           echo "android.minapi = 21" >> buildozer.spec
-          
-          # 日志级别
           sed -i '/^log_level =/d' buildozer.spec
           echo "log_level = 2" >> buildozer.spec
-          
-          # 关键：自动接受SDK许可证 + 指定构建工具版本
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           echo "android.accept_sdk_license = True" >> buildozer.spec
           sed -i '/^android.sdk.build_tools =/d' buildozer.spec
           echo "android.sdk.build_tools = 30.0.3" >> buildozer.spec
+          # 设置 SDK 路径以便 Buildozer 使用
+          sed -i '/^android.sdk_path =/d' buildozer.spec
+          echo "android.sdk_path = $HOME/android-sdk" >> buildozer.spec
 
       - name: Build APK
         run: buildozer android debug
