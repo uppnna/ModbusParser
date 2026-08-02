@@ -1,4 +1,5 @@
 [app]
+title = Modbus解析工具
 package.name = modbusparser
 package.domain = org.modbus
 source.dir = .
