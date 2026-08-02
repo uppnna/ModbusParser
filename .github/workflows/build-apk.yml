@@ -34,19 +34,35 @@ jobs:
 
       - name: Configure Buildozer spec
         run: |
+          # 基础应用信息
           sed -i 's/^title = .*/title = Modbus 解析/' buildozer.spec
           sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
+          
+          # 权限（空）
           sed -i '/^android.permissions =/d' buildozer.spec
           echo "android.permissions = " >> buildozer.spec
+          
+          # 架构与API
+          sed -i '/^android.arch =/d' buildozer.spec
           echo "android.arch = arm64-v8a" >> buildozer.spec
+          sed -i '/^android.api =/d' buildozer.spec
           echo "android.api = 30" >> buildozer.spec
+          sed -i '/^android.minapi =/d' buildozer.spec
           echo "android.minapi = 21" >> buildozer.spec
-          sed -i '/^log_level =/d' buildozer.spec   # 删除已有的 log_level
+          
+          # 日志级别
+          sed -i '/^log_level =/d' buildozer.spec
           echo "log_level = 2" >> buildozer.spec
+          
+          # 关键：自动接受SDK许可证 + 指定构建工具版本
+          sed -i '/^android.accept_sdk_license =/d' buildozer.spec
+          echo "android.accept_sdk_license = True" >> buildozer.spec
+          sed -i '/^android.sdk.build_tools =/d' buildozer.spec
+          echo "android.sdk.build_tools = 30.0.3" >> buildozer.spec
 
       - name: Build APK
         run: buildozer android debug
