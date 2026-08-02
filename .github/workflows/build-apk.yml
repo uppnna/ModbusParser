@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04          # 关键：使用 20.04，避免 NDK r28c
 
     steps:
       - name: Checkout code
@@ -27,16 +27,16 @@ jobs:
             wget imagemagick
           pip install --upgrade pip
 
-      - name: Install Buildozer & Cython 3
-        run: pip install buildozer cython==3.0.10
+      - name: Install Buildozer
+        run: pip install buildozer
 
       - name: Cache Buildozer files
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-kivy2.3.0-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-${{ runner.os }}-2004-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-kivy2.3.0-
+            buildozer-${{ runner.os }}-2004-
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -46,11 +46,9 @@ jobs:
           sed -i 's/^title = .*/title = Modbus 解析/' buildozer.spec
           sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
-          # 使用 Kivy 2.3.0，与 Cython 3.0.10 完美配合，无需 cgi 模块
-          sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
+          sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
-
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           sed -i '/^android.skip_update =/d' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -58,8 +56,6 @@ jobs:
           sed -i '/^android.api =/d' buildozer.spec
           sed -i '/^android.minapi =/d' buildozer.spec
           sed -i '/^log_level =/d' buildozer.spec
-          sed -i '/^android.sdk_path =/d' buildozer.spec
-          sed -i '/^android.ndk_path =/d' buildozer.spec
 
           cat >> buildozer.spec << 'EOF'
           android.accept_sdk_license = True
@@ -80,45 +76,7 @@ jobs:
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
           fi
 
-      - name: First build attempt (download SDK and NDK)
-        run: buildozer android debug || true
-
-      - name: Fix SDK licenses and build-tools
-        run: |
-          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
-          echo ">> Fixing Android SDK at $SDK_DIR"
-
-          if [ -f "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
-          elif [ -f "$SDK_DIR/tools/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK_DIR/tools/bin/sdkmanager"
-          else
-            echo ">> sdkmanager not found, downloading cmdline-tools..."
-            mkdir -p "$SDK_DIR/cmdline-tools/latest"
-            wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline.zip
-            unzip -q /tmp/cmdline.zip -d /tmp/cmdline
-            mv /tmp/cmdline/cmdline-tools/* "$SDK_DIR/cmdline-tools/latest/"
-            rm -rf /tmp/cmdline /tmp/cmdline.zip
-            SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
-          fi
-
-          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          export PATH="$JAVA_HOME/bin:$PATH"
-
-          yes | $SDKMANAGER --licenses --sdk_root="$SDK_DIR" 2>/dev/null || true
-          $SDKMANAGER "build-tools;30.0.3" --sdk_root="$SDK_DIR"
-          $SDKMANAGER "platforms;android-30" --sdk_root="$SDK_DIR"
-          $SDKMANAGER "platform-tools" --sdk_root="$SDK_DIR"
-
-          if [ -f "$SDK_DIR/build-tools/30.0.3/aidl" ]; then
-            echo "✅ aidl installed successfully"
-          else
-            echo "❌ aidl still missing!"
-            find "$SDK_DIR" -name "aidl" 2>/dev/null
-            exit 1
-          fi
-
-      - name: Build APK (final)
+      - name: Build APK
         run: buildozer android debug
 
       - name: Upload APK artifact
