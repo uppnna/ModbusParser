@@ -27,16 +27,16 @@ jobs:
             wget imagemagick
           pip install --upgrade pip
 
-      - name: Install Buildozer & Cython
-        run: pip install buildozer cython==0.29.33
+      - name: Install Buildozer & Cython 3
+        run: pip install buildozer cython==3.0.10
 
       - name: Cache Buildozer files
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-cgi-fix-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-${{ runner.os }}-kivy2.3.0-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-cgi-fix-
+            buildozer-${{ runner.os }}-kivy2.3.0-
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -46,7 +46,8 @@ jobs:
           sed -i 's/^title = .*/title = Modbus 解析/' buildozer.spec
           sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
-          sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
+          # 使用 Kivy 2.3.0，与 Cython 3.0.10 完美配合，无需 cgi 模块
+          sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
 
@@ -115,21 +116,6 @@ jobs:
             echo "❌ aidl still missing!"
             find "$SDK_DIR" -name "aidl" 2>/dev/null
             exit 1
-          fi
-
-      - name: Inject cgi compatibility module for Python 3.14
-        run: |
-          # 找到 Kivy 构建时使用的 Python 3.14 的 site-packages 路径
-          PYTHON314_DIR=$(find /home/runner/.buildozer -name "python3.14" -type d | grep "hostpython3" | head -1)
-          if [ -n "$PYTHON314_DIR" ]; then
-            SITE_PACKAGES="$PYTHON314_DIR/lib/python3.14/site-packages"
-            echo ">> Found Python 3.14 at: $PYTHON314_DIR"
-            echo ">> Injecting cgi.py into $SITE_PACKAGES..."
-            sudo mkdir -p "$SITE_PACKAGES"
-            echo "# Compatibility stub" | sudo tee "$SITE_PACKAGES/cgi.py" > /dev/null
-            echo "✅ cgi.py injected successfully"
-          else
-            echo "⚠️ Python 3.14 directory not found, skipping cgi fix."
           fi
 
       - name: Build APK (final)
