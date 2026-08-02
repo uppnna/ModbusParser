@@ -30,26 +30,6 @@ jobs:
       - name: Install Buildozer
         run: pip install buildozer
 
-      - name: Cache Buildozer files
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: buildozer-final-v2-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-final-v2-
-
-      - name: Download NDK r23c
-        run: |
-          NDK_PATH="$HOME/.buildozer/android/platform/android-ndk-r23c"
-          if [ ! -f "$NDK_PATH/ndk-build" ]; then
-            echo "Downloading NDK r23c..."
-            wget -q https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
-            unzip -q android-ndk-r23c-linux.zip
-            mkdir -p "$HOME/.buildozer/android/platform"
-            mv android-ndk-r23c "$NDK_PATH"
-            rm android-ndk-r23c-linux.zip
-          fi
-
       - name: Initialize Buildozer
         run: buildozer init
 
@@ -61,10 +41,6 @@ jobs:
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
-
-          # 清除所有旧配置
-          sed -i '/^android.ndk_path =/d' buildozer.spec
-          sed -i '/^android.sdk_path =/d' buildozer.spec
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           sed -i '/^android.skip_update =/d' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -72,10 +48,7 @@ jobs:
           sed -i '/^android.api =/d' buildozer.spec
           sed -i '/^android.minapi =/d' buildozer.spec
           sed -i '/^log_level =/d' buildozer.spec
-
-          # 写入新配置（NDK 路径必须在最前面）
           cat >> buildozer.spec << 'EOF'
-          android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r23c
           android.accept_sdk_license = True
           android.skip_update = False
           android.permissions = 
@@ -94,14 +67,12 @@ jobs:
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
           fi
 
-      - name: First build attempt (downloads SDK)
+      - name: First build attempt (downloads SDK and NDK)
         run: buildozer android debug || true
 
       - name: Accept SDK licenses and install build-tools
         run: |
           SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
-          
-          # 安装 cmdline-tools（如果不存在）
           if [ ! -f "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
             mkdir -p "$SDK_DIR/cmdline-tools/latest"
             wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline.zip
@@ -109,24 +80,43 @@ jobs:
             mv /tmp/cmdline/cmdline-tools/* "$SDK_DIR/cmdline-tools/latest/"
             rm -rf /tmp/cmdline /tmp/cmdline.zip
           fi
-          
           SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          
-          # 接受许可
           yes | $SDKMANAGER --licenses --sdk_root="$SDK_DIR" 2>/dev/null || true
-          
-          # 安装必要组件
           $SDKMANAGER "build-tools;30.0.3" --sdk_root="$SDK_DIR"
           $SDKMANAGER "platforms;android-30" --sdk_root="$SDK_DIR"
           $SDKMANAGER "platform-tools" --sdk_root="$SDK_DIR"
-          
-          # 验证
           if [ -f "$SDK_DIR/build-tools/30.0.3/aidl" ]; then
             echo "✅ aidl ready!"
           else
             echo "❌ aidl missing!" && exit 1
           fi
+
+      - name: Replace NDK r28c with r23c
+        run: |
+          NDK_DIR="$HOME/.buildozer/android/platform"
+          
+          # 删除 r28c（Python 3.14，不兼容）
+          if [ -d "$NDK_DIR/android-ndk-r28c" ]; then
+            echo ">> Removing NDK r28c..."
+            rm -rf "$NDK_DIR/android-ndk-r28c"
+          fi
+          
+          # 下载 r23c（Python 3.9，完全兼容）
+          if [ ! -d "$NDK_DIR/android-ndk-r23c" ]; then
+            echo ">> Downloading NDK r23c..."
+            cd /tmp
+            wget -q https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
+            unzip -q android-ndk-r23c-linux.zip
+            mv android-ndk-r23c "$NDK_DIR/"
+            rm android-ndk-r23c-linux.zip
+            cd -
+          fi
+          
+          # 创建符号链接，让 Buildozer 以为 r23c 就是 r28c
+          ln -sfn "$NDK_DIR/android-ndk-r23c" "$NDK_DIR/android-ndk-r28c"
+          
+          echo "✅ NDK r23c installed and linked"
 
       - name: Build APK (final)
         run: buildozer android debug
