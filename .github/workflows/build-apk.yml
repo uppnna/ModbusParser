@@ -37,16 +37,25 @@ jobs:
           # 下载命令行工具
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
           unzip -q cmdline-tools.zip -d $ANDROID_HOME/cmdline-tools/latest
-          # 修正目录结构：zip内为 cmdline-tools/ 子目录，需将其内容上移
+          # 调整目录结构（zip内为cmdline-tools/子目录）
           if [ -d "$ANDROID_HOME/cmdline-tools/latest/cmdline-tools" ]; then
             mv $ANDROID_HOME/cmdline-tools/latest/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
             rmdir $ANDROID_HOME/cmdline-tools/latest/cmdline-tools
           fi
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+          export PATH=$ANDROID_HOME/platform-tools:$PATH
           # 自动接受许可证
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          # 安装必需组件
+          # 安装必需组件（明确版本）
           sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3"
+          # 验证 aidl 存在
+          if [ ! -f "$ANDROID_HOME/build-tools/30.0.3/aidl" ]; then
+            echo "ERROR: aidl not found!" && exit 1
+          fi
+          echo "aidl installed at $ANDROID_HOME/build-tools/30.0.3/aidl"
+          # 创建软链接到 Buildozer 默认期望的路径
+          mkdir -p $HOME/.buildozer/android/platform
+          ln -sfn $ANDROID_HOME $HOME/.buildozer/android/platform/android-sdk
           # 设置环境变量
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
@@ -82,7 +91,7 @@ jobs:
           sed -i '/^log_level =/d' buildozer.spec
           echo "log_level = 2" >> buildozer.spec
           
-          # 强制使用手动安装的 SDK
+          # 强制使用手动 SDK（同时保留软链接，双保险）
           sed -i '/^android.sdk_path =/d' buildozer.spec
           echo "android.sdk_path = $HOME/android-sdk" >> buildozer.spec
           sed -i '/^android.sdk.build_tools =/d' buildozer.spec
@@ -93,6 +102,8 @@ jobs:
       - name: Build APK
         run: |
           export ANDROID_HOME=$HOME/android-sdk
+          # 确认软链接正确
+          ls -l $HOME/.buildozer/android/platform/android-sdk
           buildozer android debug
 
       - name: Upload APK artifact
