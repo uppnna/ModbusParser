@@ -30,14 +30,13 @@ jobs:
       - name: Install Buildozer & Cython
         run: pip install buildozer cython==0.29.33
 
-      # 缓存 Buildozer 目录（加速后续构建）
       - name: Cache Buildozer files
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-${{ runner.os }}-v2-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-
+            buildozer-${{ runner.os }}-v2-
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -51,7 +50,7 @@ jobs:
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
 
-          # 清除所有默认配置，写入精简必要项
+          # 清除所有默认项并写入简洁配置
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           sed -i '/^android.skip_update =/d' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -61,7 +60,6 @@ jobs:
           sed -i '/^log_level =/d' buildozer.spec
           sed -i '/^android.sdk_path =/d' buildozer.spec
           sed -i '/^android.ndk =/d' buildozer.spec
-          sed -i '/^p4a.hostpython =/d' buildozer.spec
 
           cat >> buildozer.spec << 'EOF'
           android.accept_sdk_license = True
@@ -83,7 +81,46 @@ jobs:
           fi
 
       - name: Build APK
-        run: buildozer android debug
+        run: |
+          # 让 Buildozer 先下载 SDK（可能会失败在许可步骤，我们手动修复）
+          buildozer android debug || true
+          
+          # 手动接受许可并安装正确的构建工具
+          export SDK_PATH="$HOME/.buildozer/android/platform/android-sdk"
+          if [ -d "$SDK_PATH" ]; then
+            echo ">> Fixing Android SDK licenses and build-tools..."
+            
+            # 如果不存在 tools/bin，尝试寻找 sdkmanager
+            if [ ! -f "$SDK_PATH/tools/bin/sdkmanager" ] && [ -d "$SDK_PATH/cmdline-tools" ]; then
+              CMDLINE_DIR=$(find "$SDK_PATH/cmdline-tools" -name "bin" -type d | head -1)
+              if [ -d "$CMDLINE_DIR" ]; then
+                ln -sfn "$(dirname "$CMDLINE_DIR")" "$SDK_PATH/tools"
+              fi
+            fi
+            
+            export PATH="$SDK_PATH/tools/bin:$PATH"
+            
+            # 接受所有许可
+            yes | sdkmanager --licenses --sdk_root="$SDK_PATH" 2>/dev/null || true
+            
+            # 安装构建工具 30.0.3（包含 aidl）
+            sdkmanager "build-tools;30.0.3" --sdk_root="$SDK_PATH"
+            sdkmanager "platforms;android-30" --sdk_root="$SDK_PATH"
+            
+            # 验证 aidl 是否存在
+            if [ -f "$SDK_PATH/build-tools/30.0.3/aidl" ]; then
+              echo "✅ aidl installed successfully"
+            else
+              echo "❌ aidl still missing, trying alternative..."
+              sdkmanager "build-tools;33.0.2" --sdk_root="$SDK_PATH"
+              if [ -f "$SDK_PATH/build-tools/33.0.2/aidl" ]; then
+                echo "✅ aidl found in build-tools 33.0.2"
+              fi
+            fi
+          fi
+          
+          # 再次构建（这次应该成功）
+          buildozer android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
