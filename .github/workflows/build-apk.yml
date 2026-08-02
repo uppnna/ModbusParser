@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04          # 关键：使用 20.04，避免 NDK r28c
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
@@ -34,9 +34,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-2004-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-ndk23c-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-2004-
+            buildozer-ndk23c-
+
+      - name: Download NDK r23c
+        run: |
+          NDK_PATH="$HOME/.buildozer/android/platform/android-ndk-r23c"
+          if [ ! -f "$NDK_PATH/ndk-build" ]; then
+            echo "Downloading NDK r23c..."
+            wget -q https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
+            unzip -q android-ndk-r23c-linux.zip
+            mkdir -p "$HOME/.buildozer/android/platform"
+            mv android-ndk-r23c "$NDK_PATH"
+            rm android-ndk-r23c-linux.zip
+          fi
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -49,6 +61,9 @@ jobs:
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
+
+          # 清除所有可能冲突的配置
+          sed -i '/^android.ndk_path =/d' buildozer.spec
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           sed -i '/^android.skip_update =/d' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -57,15 +72,15 @@ jobs:
           sed -i '/^android.minapi =/d' buildozer.spec
           sed -i '/^log_level =/d' buildozer.spec
 
-          cat >> buildozer.spec << 'EOF'
-          android.accept_sdk_license = True
-          android.skip_update = False
-          android.permissions = 
-          android.arch = arm64-v8a
-          android.api = 30
-          android.minapi = 21
-          log_level = 2
-          EOF
+          # 写入配置（NDK 路径使用绝对路径）
+          echo "android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r23c" >> buildozer.spec
+          echo "android.accept_sdk_license = True" >> buildozer.spec
+          echo "android.skip_update = False" >> buildozer.spec
+          echo "android.permissions = " >> buildozer.spec
+          echo "android.arch = arm64-v8a" >> buildozer.spec
+          echo "android.api = 30" >> buildozer.spec
+          echo "android.minapi = 21" >> buildozer.spec
+          echo "log_level = 2" >> buildozer.spec
 
       - name: Convert icon (if icon.ico exists)
         run: |
