@@ -1,32 +1,57 @@
-name: Build Python APK
+name: Build APK
+
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 支持手动点击运行
+  workflow_dispatch:
 
 jobs:
-  build_apk:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04
+
     steps:
-      - name: 检出仓库代码
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: 安装系统编译依赖
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
         run: |
-          sudo apt update -y
-          sudo apt upgrade -y
-          sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config gcc g++ make cmake libssl-dev python3-pip python3-venv libaidl2-java libffi-dev
+          sudo apt-get update -y
+          sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip \
+            autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
+            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev libltdl-dev
+          pip install --upgrade pip
 
-      - name: 安装Buildozer
+      - name: Install Buildozer
+        run: pip install buildozer
+
+      - name: Initialize Buildozer
+        run: buildozer init
+
+      - name: Configure Buildozer spec
         run: |
-          python3 -m pip install --upgrade pip
-          pip3 install buildozer
+          sed -i 's/^title = .*/title = Modbus 解析/' buildozer.spec
+          sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
+          sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
+          sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
+          sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf/' buildozer.spec
+          sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
+          sed -i '/^android.permissions =/d' buildozer.spec
+          echo "android.permissions = " >> buildozer.spec
+          echo "android.arch = arm64-v8a" >> buildozer.spec
+          echo "android.api = 30" >> buildozer.spec
+          echo "android.minapi = 21" >> buildozer.spec
+          echo "log_level = 2" >> buildozer.spec
 
-      - name: 静默同意协议、编译安卓调试APK
-        run: yes | buildozer android debug
+      - name: Build APK
+        run: buildozer android debug
 
-      - name: 打包成品上传
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ModbusParser-APK安装包
+          name: ModbusParser-APK
           path: bin/*.apk
