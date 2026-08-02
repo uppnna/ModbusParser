@@ -67,7 +67,7 @@ jobs:
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
           fi
 
-      - name: First build attempt (downloads SDK and NDK)
+      - name: First build attempt (downloads SDK)
         run: buildozer android debug || true
 
       - name: Accept SDK licenses and install build-tools
@@ -92,19 +92,15 @@ jobs:
             echo "❌ aidl missing!" && exit 1
           fi
 
-      - name: Replace NDK r28c with r23c
+      - name: Replace NDK with r23c (disguised as r28c)
         run: |
           NDK_DIR="$HOME/.buildozer/android/platform"
           
-          # 删除 r28c（Python 3.14，不兼容）
-          if [ -d "$NDK_DIR/android-ndk-r28c" ]; then
-            echo ">> Removing NDK r28c..."
-            rm -rf "$NDK_DIR/android-ndk-r28c"
-          fi
+          # 删除 r28c
+          rm -rf "$NDK_DIR/android-ndk-r28c"
           
-          # 下载 r23c（Python 3.9，完全兼容）
+          # 下载 r23c
           if [ ! -d "$NDK_DIR/android-ndk-r23c" ]; then
-            echo ">> Downloading NDK r23c..."
             cd /tmp
             wget -q https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
             unzip -q android-ndk-r23c-linux.zip
@@ -113,10 +109,19 @@ jobs:
             cd -
           fi
           
-          # 创建符号链接，让 Buildozer 以为 r23c 就是 r28c
-          ln -sfn "$NDK_DIR/android-ndk-r23c" "$NDK_DIR/android-ndk-r28c"
+          # 复制到 r28c 目录（而不是符号链接）
+          cp -r "$NDK_DIR/android-ndk-r23c" "$NDK_DIR/android-ndk-r28c"
           
-          echo "✅ NDK r23c installed and linked"
+          # 修改 source.properties，将版本伪装为 r28c
+          PROPS="$NDK_DIR/android-ndk-r28c/source.properties"
+          if [ -f "$PROPS" ]; then
+            sed -i 's/^Pkg.Revision = .*/Pkg.Revision = 28.0.12433566/' "$PROPS"
+            sed -i 's/^Pkg.Desc = .*/Pkg.Desc = Android NDK r28c/' "$PROPS"
+            echo ">> NDK disguised as r28c:"
+            cat "$PROPS"
+          fi
+          
+          echo "✅ NDK r23c installed as r28c"
 
       - name: Build APK (final)
         run: buildozer android debug
