@@ -30,13 +30,13 @@ jobs:
       - name: Install Buildozer & Cython
         run: pip install buildozer cython==0.29.33
 
-      - name: Cache Buildozer files (include custom NDK)
+      - name: Cache Buildozer files
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-r25c-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-${{ runner.os }}-final-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-r25c-
+            buildozer-${{ runner.os }}-final-
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -94,7 +94,54 @@ jobs:
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
           fi
 
-      - name: Build APK
+      - name: First build attempt (will fail but downloads SDK)
+        run: buildozer android debug || true
+
+      - name: Fix SDK licenses and build-tools
+        run: |
+          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          echo ">> Fixing Android SDK at $SDK_DIR"
+
+          # 查找 sdkmanager
+          if [ -f "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -f "$SDK_DIR/tools/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK_DIR/tools/bin/sdkmanager"
+          elif [ -f "$SDK_DIR/tools/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK_DIR/tools/cmdline-tools/latest/bin/sdkmanager"
+          else
+            echo ">> sdkmanager not found, downloading cmdline-tools..."
+            mkdir -p "$SDK_DIR/cmdline-tools/latest"
+            wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline.zip
+            unzip -q /tmp/cmdline.zip -d /tmp/cmdline
+            mv /tmp/cmdline/cmdline-tools/* "$SDK_DIR/cmdline-tools/latest/"
+            rm -rf /tmp/cmdline /tmp/cmdline.zip
+            SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          export PATH="$JAVA_HOME/bin:$PATH"
+
+          # 接受许可
+          echo ">> Accepting licenses..."
+          yes | $SDKMANAGER --licenses --sdk_root="$SDK_DIR" 2>/dev/null || true
+
+          # 安装必要的构建工具
+          echo ">> Installing build-tools 30.0.3..."
+          $SDKMANAGER "build-tools;30.0.3" --sdk_root="$SDK_DIR"
+          $SDKMANAGER "platforms;android-30" --sdk_root="$SDK_DIR"
+          $SDKMANAGER "platform-tools" --sdk_root="$SDK_DIR"
+
+          # 验证 aidl
+          if [ -f "$SDK_DIR/build-tools/30.0.3/aidl" ]; then
+            echo "✅ aidl installed successfully at $SDK_DIR/build-tools/30.0.3/aidl"
+          else
+            echo "❌ aidl still missing!"
+            find "$SDK_DIR" -name "aidl" 2>/dev/null
+            exit 1
+          fi
+
+      - name: Build APK (final)
         run: buildozer android debug
 
       - name: Upload APK artifact
