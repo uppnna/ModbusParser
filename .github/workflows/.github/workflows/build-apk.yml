@@ -1,0 +1,31 @@
+name: Build Python APK
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取仓库代码
+        uses: actions/checkout@v4
+      - name: 缓存编译依赖，加速打包
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.buildozer
+            ~/.android
+          key: buildozer-modbus-cache-${{ github.sha }}
+      - name: 安装Ubuntu系统依赖
+        run: |
+          sudo apt update
+          sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config gcc g++ make cmake libssl-dev python3-pip python3-venv
+      - name: 安装buildozer打包工具
+        run: pip3 install buildozer
+      - name: 编译安卓调试APK
+        run: buildozer android debug
+      - name: 上传APK成品
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModbusParser_APK
+          path: bin/*.apk
