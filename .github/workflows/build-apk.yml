@@ -77,6 +77,7 @@ jobs:
             echo ">> Downloading NDK r25c..."
             wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
             unzip -q android-ndk-r25c-linux.zip
+            mkdir -p "$(dirname "$NDK_DIR")"
             mv android-ndk-r25c "$NDK_DIR"
             rm android-ndk-r25c-linux.zip
           else
