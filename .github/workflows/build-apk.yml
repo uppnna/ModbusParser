@@ -23,22 +23,48 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip \
             autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
-            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev libltdl-dev \
-            imagemagick      # 新增：用于图标转换
+            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev libltdl-dev
           pip install --upgrade pip
 
       - name: Install Buildozer & Cython
         run: pip install buildozer cython==0.29.33
 
+      # 缓存 Buildozer 目录（包含 SDK、NDK、包等）
       - name: Cache Buildozer files
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.buildozer
-            ~/.gradle
+          path: ~/.buildozer
           key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
             buildozer-${{ runner.os }}-
+
+      # 手动安装 Android SDK（确保 aidl 可用）
+      - name: Install Android SDK
+        run: |
+          export ANDROID_SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          cd $ANDROID_SDK_ROOT/cmdline-tools
+
+          # 下载最新命令行工具
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mv cmdline-tools latest
+          rm commandlinetools-linux-9477386_latest.zip
+
+          # 设置环境变量
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+
+          # 接受许可并安装必要组件（platforms、build-tools）
+          yes | sdkmanager --licenses > /dev/null 2>&1
+          sdkmanager "platforms;android-30" "build-tools;30.0.3" "platform-tools"
+
+          # 验证 aidl 是否存在
+          if [ -f "$ANDROID_HOME/build-tools/30.0.3/aidl" ]; then
+            echo "✅ aidl installed successfully"
+          else
+            echo "❌ aidl not found!" && exit 1
+          fi
 
       - name: Initialize Buildozer
         run: buildozer init
@@ -49,8 +75,14 @@ jobs:
           sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
-          sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png,ico/' buildozer.spec
+          sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
+
+          # 指定 SDK 路径（告诉 Buildozer 使用我们安装的 SDK）
+          sed -i '/^android.sdk_path =/d' buildozer.spec
+          echo "android.sdk_path = $HOME/.buildozer/android/platform/android-sdk" >> buildozer.spec
+
+          # 其余配置
           sed -i '/^android.permissions =/d' buildozer.spec
           echo "android.permissions = " >> buildozer.spec
           sed -i '/^android.arch =/d' buildozer.spec
@@ -66,20 +98,21 @@ jobs:
           sed -i '/^android.skip_update =/d' buildozer.spec
           echo "android.skip_update = False" >> buildozer.spec
 
-      # 新增：将 icon.ico 转换为 PNG 并复制为 icon.png
-      - name: Convert icon to PNG
+      # 可选：转换图标（如果有 icon.ico）
+      - name: Convert icon (if exists)
         run: |
-          convert icon.ico icon.png
-          ls -l icon.png  # 验证是否生成成功
+          if [ -f icon.ico ]; then
+            sudo apt-get install -y imagemagick
+            convert icon.ico icon.png
+            sed -i '/^icon.filename =/d' buildozer.spec
+            echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
+          fi
 
-      # 新增：在 spec 中添加图标路径
-      - name: Set icon in Buildozer spec
+      - name: Build APK
         run: |
-          sed -i '/^icon.filename =/d' buildozer.spec
-          echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
-
-      - name: Build APK (let Buildozer manage SDK automatically)
-        run: buildozer android debug
+          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+          export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          buildozer android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
