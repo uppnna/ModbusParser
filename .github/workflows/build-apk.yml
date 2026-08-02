@@ -34,9 +34,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-ndk23c-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-final-v2-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-ndk23c-
+            buildozer-final-v2-
 
       - name: Download NDK r23c
         run: |
@@ -62,8 +62,9 @@ jobs:
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
 
-          # 清除所有可能冲突的配置
+          # 清除所有旧配置
           sed -i '/^android.ndk_path =/d' buildozer.spec
+          sed -i '/^android.sdk_path =/d' buildozer.spec
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           sed -i '/^android.skip_update =/d' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -72,15 +73,17 @@ jobs:
           sed -i '/^android.minapi =/d' buildozer.spec
           sed -i '/^log_level =/d' buildozer.spec
 
-          # 写入配置（NDK 路径使用绝对路径）
-          echo "android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r23c" >> buildozer.spec
-          echo "android.accept_sdk_license = True" >> buildozer.spec
-          echo "android.skip_update = False" >> buildozer.spec
-          echo "android.permissions = " >> buildozer.spec
-          echo "android.arch = arm64-v8a" >> buildozer.spec
-          echo "android.api = 30" >> buildozer.spec
-          echo "android.minapi = 21" >> buildozer.spec
-          echo "log_level = 2" >> buildozer.spec
+          # 写入新配置（NDK 路径必须在最前面）
+          cat >> buildozer.spec << 'EOF'
+          android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r23c
+          android.accept_sdk_license = True
+          android.skip_update = False
+          android.permissions = 
+          android.arch = arm64-v8a
+          android.api = 30
+          android.minapi = 21
+          log_level = 2
+          EOF
 
       - name: Convert icon (if icon.ico exists)
         run: |
@@ -91,7 +94,41 @@ jobs:
             echo "icon.filename = %(source.dir)s/icon.png" >> buildozer.spec
           fi
 
-      - name: Build APK
+      - name: First build attempt (downloads SDK)
+        run: buildozer android debug || true
+
+      - name: Accept SDK licenses and install build-tools
+        run: |
+          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          
+          # 安装 cmdline-tools（如果不存在）
+          if [ ! -f "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
+            mkdir -p "$SDK_DIR/cmdline-tools/latest"
+            wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline.zip
+            unzip -q /tmp/cmdline.zip -d /tmp/cmdline
+            mv /tmp/cmdline/cmdline-tools/* "$SDK_DIR/cmdline-tools/latest/"
+            rm -rf /tmp/cmdline /tmp/cmdline.zip
+          fi
+          
+          SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          
+          # 接受许可
+          yes | $SDKMANAGER --licenses --sdk_root="$SDK_DIR" 2>/dev/null || true
+          
+          # 安装必要组件
+          $SDKMANAGER "build-tools;30.0.3" --sdk_root="$SDK_DIR"
+          $SDKMANAGER "platforms;android-30" --sdk_root="$SDK_DIR"
+          $SDKMANAGER "platform-tools" --sdk_root="$SDK_DIR"
+          
+          # 验证
+          if [ -f "$SDK_DIR/build-tools/30.0.3/aidl" ]; then
+            echo "✅ aidl ready!"
+          else
+            echo "❌ aidl missing!" && exit 1
+          fi
+
+      - name: Build APK (final)
         run: buildozer android debug
 
       - name: Upload APK artifact
