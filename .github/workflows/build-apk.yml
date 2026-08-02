@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.10
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -30,9 +30,9 @@ jobs:
       - name: Install Buildozer & Cython
         run: pip install buildozer cython==0.29.33
 
-      # 缓存 Buildozer 目录（包含自动下载的 SDK、NDK、包等）
+      # 缓存 Buildozer 目录（加速后续构建）
       - name: Cache Buildozer files
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.buildozer
           key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
@@ -47,14 +47,11 @@ jobs:
           sed -i 's/^title = .*/title = Modbus 解析/' buildozer.spec
           sed -i 's/^package.name = .*/package.name = modbusparser/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.example/' buildozer.spec
-          # 回退到 Kivy 2.2.1，完美兼容 Python 3.9/3.10
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.2.1/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,ttf,png/' buildozer.spec
           sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
 
-          # 清理所有手动 SDK/NDK 设置，完全交给 Buildozer
-          sed -i '/^android.sdk_path =/d' buildozer.spec
-          sed -i '/^android.ndk =/d' buildozer.spec
+          # 清除所有默认配置，写入精简必要项
           sed -i '/^android.accept_sdk_license =/d' buildozer.spec
           sed -i '/^android.skip_update =/d' buildozer.spec
           sed -i '/^android.permissions =/d' buildozer.spec
@@ -62,18 +59,19 @@ jobs:
           sed -i '/^android.api =/d' buildozer.spec
           sed -i '/^android.minapi =/d' buildozer.spec
           sed -i '/^log_level =/d' buildozer.spec
+          sed -i '/^android.sdk_path =/d' buildozer.spec
+          sed -i '/^android.ndk =/d' buildozer.spec
           sed -i '/^p4a.hostpython =/d' buildozer.spec
 
-          # 写入简洁且必要的配置
-          {
-            echo "android.accept_sdk_license = True"
-            echo "android.skip_update = False"
-            echo "android.permissions = "
-            echo "android.arch = arm64-v8a"
-            echo "android.api = 30"
-            echo "android.minapi = 21"
-            echo "log_level = 2"
-          } >> buildozer.spec
+          cat >> buildozer.spec << 'EOF'
+          android.accept_sdk_license = True
+          android.skip_update = False
+          android.permissions = 
+          android.arch = arm64-v8a
+          android.api = 30
+          android.minapi = 21
+          log_level = 2
+          EOF
 
       - name: Convert icon (if icon.ico exists)
         run: |
